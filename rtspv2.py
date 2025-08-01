@@ -133,8 +133,11 @@ class RealTimeDetector:
             return
 
         for box in results[0].boxes:
+            # Filter berdasarkan confidence dan kelas
             if box.conf[0] < self.confidence_threshold or int(box.cls[0]) != self.target_class:
                 continue
+
+            # Pastikan ada track_id
             if box.id is None:
                 continue
             
@@ -142,30 +145,41 @@ class RealTimeDetector:
             coords = box.xyxy[0].cpu().numpy().astype(int)
             x1, y1, x2, y2 = coords
             
+            # Cek jika titik tengah objek berada di dalam ROI
             center_point = (int((x1 + x2) / 2), int((y1 + y2) / 2))
             if self.roi_points is not None and cv2.pointPolygonTest(self.roi_points, center_point, False) < 0:
-                continue 
+                continue # Lewati jika di luar ROI
                 
+            # --- PERUBAHAN DI SINI ---
+            # Ambil confidence score, ubah ke persen, dan format label baru
+            confidence_percent = int(box.conf[0] * 100)
+            label = f"Person {track_id} - {confidence_percent}%"
+            # --- AKHIR PERUBAHAN ---
+
+            # Gambar bounding box dan label baru pada frame
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            label = f"Person ID: {track_id}"
             cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+            # Manajemen waktu deteksi
             current_time = time.time()
             if self.tracked_persons[track_id]["first_seen"] is None:
                 self.tracked_persons[track_id]["first_seen"] = current_time
             
             self.tracked_persons[track_id]["last_seen"] = current_time
             
+            # Cek jika deteksi sudah persisten dan belum dinotifikasi
             detection_duration = current_time - self.tracked_persons[track_id]["first_seen"]
             if detection_duration >= self.persistence_threshold and not self.tracked_persons[track_id]["notified"]:
                 self.logger.info(f"✅ Deteksi valid untuk ID: {track_id}. Durasi: {detection_duration:.2f}s. Mengirim tugas notifikasi.")
                 
                 self.tracked_persons[track_id]["notified"] = True
+                
+                # Buat salinan frame dan crop untuk dikirim ke thread lain
                 frame_copy = frame.copy()
                 crop_img = frame_copy[y1:y2, x1:x2]
 
                 self.executor.submit(self._handle_persistent_detection, frame_copy, crop_img, track_id, box.conf[0])
-
+    
     def _handle_persistent_detection(self, frame: np.ndarray, crop_img: np.ndarray, track_id: int, confidence: float):
         """
         Tugas asinkron untuk menyimpan gambar dan mengirim notifikasi sesuai konfigurasi on/off.
