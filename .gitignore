@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Data & Model
+*.pt
+*.h5
+*.ckpt
+
+# Log & Output
+*.log
+*.out
+*.tmp
+
+# Images
+imagerecord/
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env

@@ -1,0 +1,53 @@
+# ==================================================
+# KONFIGURASI SISTEM DETEKSI OBJEK V2025
+# ==================================================
+camera:
+  # Pilih sumber video. Opsi yang valid: 'rtsp' atau 'webcam'.
+  source_type: "webcam"  
+  
+  # --- Pengaturan untuk sumber RTSP ---
+  # Hanya digunakan jika source_type adalah 'rtsp'.
+  rtsp_url: "rtsp://admin:KAQSML@172.16.6.77:554/" 
+
+  # --- Pengaturan untuk sumber Webcam ---
+  # Hanya digunakan jika source_type adalah 'webcam'.
+  webcam_id: 0 # Biasanya 0 untuk webcam bawaan, 1 atau lebih untuk webcam eksternal.
+
+model:
+  path: "yolov10n.pt"         # Model yang ringan dan cepat. Ganti ke yolov10s/m/l untuk akurasi lebih tinggi.
+  confidence_threshold: 0.60 # Ambang batas kepercayaan deteksi.
+  target_class: 0            # ID kelas untuk 'person' dalam dataset COCO.
+  
+processing:
+  # Gunakan 'cuda' jika Anda memiliki GPU NVIDIA. Gunakan 'cpu' jika tidak.
+  device: "cpu"
+  # Aktifkan untuk hanya memproses area tertentu pada video.
+  enable_roi: false
+  # Koordinat poligon untuk Region of Interest (ROI).
+  # Format: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+  roi_points: [[100, 200], [800, 210], [780, 700], [80, 710]]
+
+tracking:
+  # Objek harus terlihat selama (detik) ini untuk dianggap sebagai deteksi valid.
+  persistence_threshold_sec: 2.0
+  # Toleransi waktu (detik) sebelum tracker mereset ID jika objek hilang.
+  disappearance_timeout_sec: 5.0
+
+storage:
+  base_capture_path: "./data/captures"
+  log_path: "./data/logs/events.log"
+  # 'true' untuk hanya menyimpan potongan gambar orangnya (lebih hemat storage).
+  # 'false' untuk menyimpan seluruh frame.
+  save_crop: true
+
+api:
+  # Kunci API utama untuk semua layanan
+  api_key: "SECRET-KEY-123456789"
+
+  whatsapp:
+    enabled: false  # Ganti ke 'false' untuk menonaktifkan notifikasi WhatsApp
+    endpoint: "https://api.yourprovider.com/v1/messages"
+
+  log_server:
+    enabled: false # Ganti ke 'true' untuk mengaktifkan pengiriman log ke server
+    endpoint: "https://api.zai-your-server.com/v2/log/event"
