@@ -34,11 +34,21 @@ tracking:
   disappearance_timeout_sec: 5.0
 
 storage:
-  base_capture_path: "./data/captures"
+  # Opsi untuk folder 'data/captures'
+  captures:
+    # 'true' untuk menyimpan potongan gambar (crop) orangnya saja.
+    # 'false' untuk menyimpan seluruh frame asli (tanpa kotak deteksi).
+    save_crop: true
+    path: "./data/captures"
+
+  # Opsi untuk folder 'framerecord' (menyimpan frame dengan kotak deteksi)
+  framerecord:
+    # Ganti ke 'true' untuk mengaktifkan penyimpanan ke folder 'framerecord'.
+    enabled: true
+    path: "./data/framerecord"
+  
+  # Lokasi untuk file log
   log_path: "./data/logs/events.log"
-  # 'true' untuk hanya menyimpan potongan gambar orangnya (lebih hemat storage).
-  # 'false' untuk menyimpan seluruh frame.
-  save_crop: true
 
 api:
   # Kunci API utama untuk semua layanan

@@ -127,17 +127,15 @@ class RealTimeDetector:
         with open(path, 'r') as f:
             return yaml.safe_load(f)
 
-    def _process_detections(self, frame: np.ndarray, results: list):
-        """Memproses hasil deteksi dari model YOLO."""
+
+    def _process_detections(self, original_frame: np.ndarray, display_frame: np.ndarray, results: list):
+        """Memproses hasil deteksi dan MENGGAMBAR pada display_frame."""
         if results[0].boxes is None:
             return
 
         for box in results[0].boxes:
-            # Filter berdasarkan confidence dan kelas
             if box.conf[0] < self.confidence_threshold or int(box.cls[0]) != self.target_class:
                 continue
-
-            # Pastikan ada track_id
             if box.id is None:
                 continue
             
@@ -145,71 +143,85 @@ class RealTimeDetector:
             coords = box.xyxy[0].cpu().numpy().astype(int)
             x1, y1, x2, y2 = coords
             
-            # Cek jika titik tengah objek berada di dalam ROI
             center_point = (int((x1 + x2) / 2), int((y1 + y2) / 2))
             if self.roi_points is not None and cv2.pointPolygonTest(self.roi_points, center_point, False) < 0:
-                continue # Lewati jika di luar ROI
+                continue 
                 
-            # --- PERUBAHAN DI SINI ---
-            # Ambil confidence score, ubah ke persen, dan format label baru
             confidence_percent = int(box.conf[0] * 100)
             label = f"Person {track_id} - {confidence_percent}%"
-            # --- AKHIR PERUBAHAN ---
 
-            # Gambar bounding box dan label baru pada frame
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            # --- PERBAIKAN UTAMA DI SINI ---
+            # Pastikan menggambar pada 'display_frame'
+            cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(display_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            # --- AKHIR PERBAIKAN ---
 
-            # Manajemen waktu deteksi
             current_time = time.time()
             if self.tracked_persons[track_id]["first_seen"] is None:
                 self.tracked_persons[track_id]["first_seen"] = current_time
             
             self.tracked_persons[track_id]["last_seen"] = current_time
             
-            # Cek jika deteksi sudah persisten dan belum dinotifikasi
             detection_duration = current_time - self.tracked_persons[track_id]["first_seen"]
             if detection_duration >= self.persistence_threshold and not self.tracked_persons[track_id]["notified"]:
                 self.logger.info(f"✅ Deteksi valid untuk ID: {track_id}. Durasi: {detection_duration:.2f}s. Mengirim tugas notifikasi.")
                 
                 self.tracked_persons[track_id]["notified"] = True
                 
-                # Buat salinan frame dan crop untuk dikirim ke thread lain
-                frame_copy = frame.copy()
-                crop_img = frame_copy[y1:y2, x1:x2]
+                crop_img = original_frame[y1:y2, x1:x2]
 
-                self.executor.submit(self._handle_persistent_detection, frame_copy, crop_img, track_id, box.conf[0])
+                self.executor.submit(
+                    self._handle_persistent_detection, 
+                    original_frame, 
+                    display_frame.copy(), # Kirim salinan display_frame ke thread lain
+                    crop_img, 
+                    track_id, 
+                    box.conf[0]
+                )
     
-    def _handle_persistent_detection(self, frame: np.ndarray, crop_img: np.ndarray, track_id: int, confidence: float):
+    def _handle_persistent_detection(self, original_frame: np.ndarray, display_frame: np.ndarray, crop_img: np.ndarray, track_id: int, confidence: float):
         """
-        Tugas asinkron untuk menyimpan gambar dan mengirim notifikasi sesuai konfigurasi on/off.
+        Tugas asinkron untuk menyimpan gambar ke folder 'captures' dan 'framerecord'
+        sesuai dengan konfigurasi.
         """
         try:
             timestamp = datetime.now()
             date_folder = timestamp.strftime('%Y-%m-%d')
-            capture_dir = Path(self.config['storage']['base_capture_path']) / date_folder
-            capture_dir.mkdir(parents=True, exist_ok=True)
+            time_str = timestamp.strftime('%H%M%S')
+
+            # --- 1. Logika Penyimpanan untuk 'data/captures' (Tanpa Kotak Deteksi) ---
+            capture_path = Path(self.config['storage']['captures']['path']) / date_folder
+            capture_path.mkdir(parents=True, exist_ok=True)
             
-            img_to_save = crop_img if self.config['storage']['save_crop'] else frame
-            filename = f"capture_id_{track_id}_{timestamp.strftime('%H%M%S')}.jpg"
-            filepath = capture_dir / filename
+            # Pilih antara menyimpan crop atau frame asli
+            img_to_save_for_capture = crop_img if self.config['storage']['captures']['save_crop'] else original_frame
+            capture_filename = capture_path / f"capture_id_{track_id}_{time_str}.jpg"
+            cv2.imwrite(str(capture_filename), img_to_save_for_capture)
+            self.logger.info(f"🖼️ Gambar asli disimpan: {capture_filename}")
+
+            # --- 2. Logika Penyimpanan untuk 'framerecord' (Dengan Kotak Deteksi) ---
+            if self.config['storage']['framerecord']['enabled']:
+                framerecord_path = Path(self.config['storage']['framerecord']['path']) / date_folder
+                framerecord_path.mkdir(parents=True, exist_ok=True)
+                
+                framerecord_filename = framerecord_path / f"framerecord_id_{track_id}_{time_str}.jpg"
+                cv2.imwrite(str(framerecord_filename), display_frame)
+                self.logger.info(f"🎥 Frame display disimpan: {framerecord_filename}")
             
-            cv2.imwrite(str(filepath), img_to_save)
-            self.logger.info(f"🖼️ Gambar disimpan: {filepath}")
+            # --- 3. Logika Pengiriman Notifikasi (Tetap Sama) ---
+            filepath_for_notif = capture_filename # Kirim crop/gambar asli di notifikasi
 
             if self.config['api']['whatsapp']['enabled']:
                 self.logger.debug("Fitur WhatsApp aktif, mencoba mengirim notifikasi.")
                 self._send_api_request(
                     url=self.config['api']['whatsapp']['endpoint'],
                     json_data={
-                        "recipient": "PHONE_NUMBER", # Ganti dengan nomor tujuan
+                        "recipient": "PHONE_NUMBER",
                         "message": f"🔴 Peringatan Keamanan! 🔴\nTerdeteksi seseorang (ID: {track_id}) pada {timestamp.strftime('%Y-%m-%d %H:%M:%S')}."
                     },
-                    files={"attachment": open(filepath, 'rb')},
+                    files={"attachment": open(filepath_for_notif, 'rb')},
                     service_name="WhatsApp"
                 )
-            else:
-                self.logger.info("Fitur notifikasi WhatsApp dinonaktifkan di config.")
 
             if self.config['api']['log_server']['enabled']:
                 self.logger.debug("Fitur Log Server aktif, mencoba mengirim log.")
@@ -218,14 +230,13 @@ class RealTimeDetector:
                     json_data={
                         "event": "person_detected", "track_id": track_id,
                         "timestamp": timestamp.isoformat(), "confidence": f"{confidence:.2f}",
-                        "image_path": str(filepath)
+                        "image_path": str(capture_filename)
                     },
                     service_name="ZAI Log Server"
                 )
-            else:
-                self.logger.info("Fitur Log Server dinonaktifkan di config.")
+
         except Exception as e:
-            self.logger.error(f"Error pada _handle_persistent_detection untuk ID {track_id}: {e}")
+            self.logger.error(f"Error pada _handle_persistent_detection untuk ID {track_id}: {e}", exc_info=True)
 
     def _send_api_request(self, url: str, json_data: dict, service_name: str, files: dict = None, retries: int = 3):
         """Mengirim request API dengan mekanisme retry."""
@@ -280,9 +291,10 @@ class RealTimeDetector:
                 self.logger.warning(f"Frame kosong dari sumber {video_source}. Mencoba menyambung ulang dalam 5 detik...")
                 cap.release()
                 time.sleep(5)
-                cap = cv2.VideoCapture(video_source) # Coba sambung ulang ke sumber yang sama
+                cap = cv2.VideoCapture(video_source)
                 continue
 
+            # Buat salinan frame untuk ditampilkan dan digambari
             display_frame = frame.copy()
 
             if roi_mask is not None:
@@ -294,7 +306,8 @@ class RealTimeDetector:
                 processing_frame, persist=True, verbose=False, tracker="bytetrack.yaml"
             )
             
-            self._process_detections(display_frame, results)
+            # Kirim frame asli (frame) dan frame untuk display (display_frame)
+            self._process_detections(frame, display_frame, results)
 
             if self.roi_points is not None:
                 cv2.polylines(display_frame, [self.roi_points], isClosed=True, color=(255, 255, 0), thickness=2)
