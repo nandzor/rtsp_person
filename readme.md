@@ -1,7 +1,4 @@
-Tentu, ini adalah penjelasan yang telah dirapikan dan diformat dalam format Markdown agar mudah dibaca di `README.md`.
-
----
-
+# readme.md
 # Penjelasan Kode: rtspv2.py
 
 Skrip `rtspv2.py` ini dirancang untuk melakukan deteksi objek (khususnya orang) secara *real-time* dari stream video RTSP atau webcam. Sistem ini mampu melacak individu yang terdeteksi, menyimpan bukti gambar, dan mengirimkan notifikasi melalui API eksternal secara asinkron.
